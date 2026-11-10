@@ -1,34 +1,37 @@
 --[=[
-    Universal Client Script Framework
-    Tương thích: PC & Mobile (Chạy trực tiếp trên Client Roblox)
+    Universal Third-Party Script Hub
+    Tương thích: PC & Mobile (Chạy trên mọi trải nghiệm Roblox)
 ]=]
 
 local Players = game:GetService("Players")
 local UserInputService = game:GetService("UserInputService")
-local TweenService = game:GetService("TweenService")
 local RunService = game:GetService("RunService")
 local Lighting = game:GetService("Lighting")
 
 local LocalPlayer = Players.LocalPlayer
 
 -------------------------------------------------------------------------------
--- 1. SAFE GUI CONTAINER RESOLUTION
+-- 1. PROTECTED GUI RESOLUTION
 -------------------------------------------------------------------------------
-local function getSafeGuiContainer()
-	local success, coreGui = pcall(function()
+local function getUIContainer()
+	local success, result = pcall(function()
+		if gethui then
+			return gethui()
+		end
 		return game:GetService("CoreGui")
 	end)
-	if success and coreGui then
-		return coreGui
+
+	if success and result then
+		return result
 	end
 	return LocalPlayer:WaitForChild("PlayerGui")
 end
 
-local parentContainer = getSafeGuiContainer()
+local targetContainer = getUIContainer()
 
--- Dọn dẹp giao diện cũ nếu script được nạp lại
-if parentContainer:FindFirstChild("UniversalClientHub") then
-	parentContainer.UniversalClientHub:Destroy()
+-- Xóa phiên bản cũ nếu đã chạy trước đó
+if targetContainer:FindFirstChild("UniversalHubGUI") then
+	targetContainer.UniversalHubGUI:Destroy()
 end
 
 -------------------------------------------------------------------------------
@@ -36,16 +39,16 @@ end
 -------------------------------------------------------------------------------
 local Config = {
 	ToggleKey = Enum.KeyCode.RightShift,
-	DefaultWalkSpeed = 16,
-	BoostedWalkSpeed = 40,
-	DefaultJumpPower = 50,
-	BoostedJumpPower = 120
+	DefaultSpeed = 16,
+	BoostSpeed = 45,
+	DefaultJump = 50,
+	BoostJump = 120
 }
 
 local State = {
 	IsMobile = UserInputService.TouchEnabled and not UserInputService.KeyboardEnabled,
 	Visible = true,
-	Toggles = {
+	Features = {
 		SpeedWalk = false,
 		HighJump = false,
 		Noclip = false,
@@ -57,33 +60,27 @@ local State = {
 -------------------------------------------------------------------------------
 -- 3. UI CONSTRUCTION
 -------------------------------------------------------------------------------
-local screenGui = Instance.new("ScreenGui")
-screenGui.Name = "UniversalClientHub"
-screenGui.ResetOnSpawn = false
+local gui = Instance.new("ScreenGui")
+gui.Name = "UniversalHubGUI"
+gui.ResetOnSpawn = false
+gui.Parent = targetContainer
 
--- Sử dụng protectgui nếu môi trường hỗ trợ
-if gethui then
-	screenGui.Parent = gethui()
-else
-	screenGui.Parent = parentContainer
-end
-
-local mainFrame = Instance.new("Frame")
-mainFrame.Size = UDim2.new(0, 310, 0, 350)
-mainFrame.Position = UDim2.new(0.5, -155, 0.5, -175)
-mainFrame.BackgroundColor3 = Color3.fromRGB(24, 24, 30)
-mainFrame.BorderSizePixel = 0
-mainFrame.Parent = screenGui
+local main = Instance.new("Frame")
+main.Size = UDim2.new(0, 300, 0, 340)
+main.Position = UDim2.new(0.5, -150, 0.5, -170)
+main.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
+main.BorderSizePixel = 0
+main.Parent = gui
 
 local mainCorner = Instance.new("UICorner")
 mainCorner.CornerRadius = UDim.new(0, 8)
-mainCorner.Parent = mainFrame
+mainCorner.Parent = main
 
 local topbar = Instance.new("Frame")
 topbar.Size = UDim2.new(1, 0, 0, 36)
 topbar.BackgroundColor3 = Color3.fromRGB(16, 16, 20)
 topbar.BorderSizePixel = 0
-topbar.Parent = mainFrame
+topbar.Parent = main
 
 local topbarCorner = Instance.new("UICorner")
 topbarCorner.CornerRadius = UDim.new(0, 8)
@@ -93,8 +90,8 @@ local title = Instance.new("TextLabel")
 title.Size = UDim2.new(1, -40, 1, 0)
 title.Position = UDim2.new(0, 12, 0, 0)
 title.BackgroundTransparency = 1
-title.Text = "Client Hub (PC / Mobile)"
-title.TextColor3 = Color3.fromRGB(240, 240, 240)
+title.Text = "Universal Client Hub"
+title.TextColor3 = Color3.fromRGB(255, 255, 255)
 title.TextXAlignment = Enum.TextXAlignment.Left
 title.Font = Enum.Font.SourceSansBold
 title.TextSize = 15
@@ -110,39 +107,39 @@ closeBtn.Font = Enum.Font.SourceSansBold
 closeBtn.TextSize = 16
 closeBtn.Parent = topbar
 
-local scrollFrame = Instance.new("ScrollingFrame")
-scrollFrame.Size = UDim2.new(1, -16, 1, -48)
-scrollFrame.Position = UDim2.new(0, 8, 0, 42)
-scrollFrame.BackgroundTransparency = 1
-scrollFrame.BorderSizePixel = 0
-scrollFrame.ScrollBarThickness = 3
-scrollFrame.Parent = mainFrame
+local scroll = Instance.new("ScrollingFrame")
+scroll.Size = UDim2.new(1, -16, 1, -48)
+scroll.Position = UDim2.new(0, 8, 0, 42)
+scroll.BackgroundTransparency = 1
+scroll.BorderSizePixel = 0
+scroll.ScrollBarThickness = 3
+scroll.Parent = main
 
-local listLayout = Instance.new("UIListLayout")
-listLayout.SortOrder = Enum.SortOrder.LayoutOrder
-listLayout.Padding = UDim.new(0, 6)
-listLayout.Parent = scrollFrame
+local layout = Instance.new("UIListLayout")
+layout.SortOrder = Enum.SortOrder.LayoutOrder
+layout.Padding = UDim.new(0, 6)
+layout.Parent = scroll
 
 -------------------------------------------------------------------------------
--- 4. MOBILE FLOATING BUTTON & DRAGGING
+-- 4. MOBILE TOGGLE & DRAGGING LOGIC
 -------------------------------------------------------------------------------
-local mobileBtn = Instance.new("TextButton")
-mobileBtn.Name = "MobileToggle"
-mobileBtn.Size = UDim2.new(0, 48, 0, 48)
-mobileBtn.Position = UDim2.new(0, 15, 0.35, 0)
-mobileBtn.BackgroundColor3 = Color3.fromRGB(32, 32, 40)
-mobileBtn.Text = "HUB"
-mobileBtn.TextColor3 = Color3.fromRGB(255, 255, 255)
-mobileBtn.Font = Enum.Font.SourceSansBold
-mobileBtn.TextSize = 13
-mobileBtn.Visible = State.IsMobile
-mobileBtn.Parent = screenGui
+local mobileToggle = Instance.new("TextButton")
+mobileToggle.Name = "MobileToggle"
+mobileToggle.Size = UDim2.new(0, 48, 0, 48)
+mobileToggle.Position = UDim2.new(0, 15, 0.35, 0)
+mobileToggle.BackgroundColor3 = Color3.fromRGB(35, 35, 42)
+mobileToggle.Text = "HUB"
+mobileToggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+mobileToggle.Font = Enum.Font.SourceSansBold
+mobileToggle.TextSize = 13
+mobileToggle.Visible = State.IsMobile
+mobileToggle.Parent = gui
 
 local mobileCorner = Instance.new("UICorner")
 mobileCorner.CornerRadius = UDim.new(0.5, 0)
-mobileCorner.Parent = mobileBtn
+mobileCorner.Parent = mobileToggle
 
-local function makeDraggable(frame, handle)
+local function setupDrag(frame, handle)
 	local dragging, dragStart, startPos
 	handle.InputBegan:Connect(function(input)
 		if input.UserInputType == Enum.UserInputType.MouseButton1 or input.UserInputType == Enum.UserInputType.Touch then
@@ -166,11 +163,11 @@ local function makeDraggable(frame, handle)
 	end)
 end
 
-makeDraggable(mainFrame, topbar)
-makeDraggable(mobileBtn, mobileBtn)
+setupDrag(main, topbar)
+setupDrag(mobileToggle, mobileToggle)
 
 -------------------------------------------------------------------------------
--- 5. LOGIC FEATURES
+-- 5. CORE LOGIC FEATURES
 -------------------------------------------------------------------------------
 local function applyPhysics()
 	local char = LocalPlayer.Character
@@ -178,16 +175,16 @@ local function applyPhysics()
 	local hum = char:FindFirstChildOfClass("Humanoid")
 	if not hum then return end
 
-	hum.WalkSpeed = State.Toggles.SpeedWalk and Config.BoostedWalkSpeed or Config.DefaultWalkSpeed
+	hum.WalkSpeed = State.Features.SpeedWalk and Config.BoostSpeed or Config.DefaultSpeed
 
 	if hum.UseJumpPower then
-		hum.JumpPower = State.Toggles.HighJump and Config.BoostedJumpPower or Config.DefaultJumpPower
+		hum.JumpPower = State.Features.HighJump and Config.BoostJump or Config.DefaultJump
 	else
-		hum.JumpHeight = State.Toggles.HighJump and (Config.BoostedJumpPower / 2.5) or (Config.DefaultJumpPower / 2.5)
+		hum.JumpHeight = State.Features.HighJump and (Config.BoostJump / 2.5) or (Config.DefaultJump / 2.5)
 	end
 end
 
-local function toggleNoclip(active)
+local function applyNoclip(active)
 	if State.Connections.Noclip then
 		State.Connections.Noclip:Disconnect()
 		State.Connections.Noclip = nil
@@ -207,7 +204,7 @@ local function toggleNoclip(active)
 	end
 end
 
-local function toggleFullBright(active)
+local function applyFullBright(active)
 	if active then
 		Lighting.Ambient = Color3.new(1, 1, 1)
 		Lighting.OutdoorAmbient = Color3.new(1, 1, 1)
@@ -220,54 +217,54 @@ local function toggleFullBright(active)
 end
 
 -------------------------------------------------------------------------------
--- 6. UI TOGGLE BUILDER
+-- 6. UI TOGGLES CREATION
 -------------------------------------------------------------------------------
-local function createToggle(nameText, stateKey, callback)
+local function addToggle(nameText, key, callback)
 	local btn = Instance.new("TextButton")
 	btn.Size = UDim2.new(1, 0, 0, 36)
-	btn.BackgroundColor3 = State.Toggles[stateKey] and Color3.fromRGB(40, 130, 65) or Color3.fromRGB(38, 38, 46)
-	btn.Text = nameText .. " : " .. (State.Toggles[stateKey] and "ON" or "OFF")
+	btn.BackgroundColor3 = State.Features[key] and Color3.fromRGB(40, 130, 65) or Color3.fromRGB(38, 38, 46)
+	btn.Text = nameText .. " : " .. (State.Features[key] and "ON" or "OFF")
 	btn.TextColor3 = Color3.fromRGB(255, 255, 255)
 	btn.Font = Enum.Font.SourceSans
 	btn.TextSize = 14
-	btn.Parent = scrollFrame
+	btn.Parent = scroll
 
 	local btnCorner = Instance.new("UICorner")
 	btnCorner.CornerRadius = UDim.new(0, 6)
 	btnCorner.Parent = btn
 
 	btn.MouseButton1Click:Connect(function()
-		State.Toggles[stateKey] = not State.Toggles[stateKey]
-		local isON = State.Toggles[stateKey]
+		State.Features[key] = not State.Features[key]
+		local isON = State.Features[key]
 		btn.BackgroundColor3 = isON and Color3.fromRGB(40, 130, 65) or Color3.fromRGB(38, 38, 46)
 		btn.Text = nameText .. " : " .. (isON and "ON" or "OFF")
 		callback(isON)
 	end)
 end
 
-createToggle("Tăng tốc (Speed Walk)", "SpeedWalk", function() applyPhysics() end)
-createToggle("Nhảy cao (High Jump)", "HighJump", function() applyPhysics() end)
-createToggle("Đi xuyên tường (Noclip)", "Noclip", function(v) toggleNoclip(v) end)
-createToggle("Tăng độ sáng (Full Bright)", "FullBright", function(v) toggleFullBright(v) end)
+addToggle("Tăng tốc (Speed Walk)", "SpeedWalk", function() applyPhysics() end)
+addToggle("Nhảy cao (High Jump)", "HighJump", function() applyPhysics() end)
+addToggle("Đi xuyên tường (Noclip)", "Noclip", function(v) applyNoclip(v) end)
+addToggle("Tăng độ sáng (Full Bright)", "FullBright", function(v) applyFullBright(v) end)
 
-listLayout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
-	scrollFrame.CanvasSize = UDim2.new(0, 0, 0, listLayout.AbsoluteContentSize.Y + 10)
+layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
+	scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
 end)
 
 -------------------------------------------------------------------------------
--- 7. EVENT CONNECTIONS
+-- 7. VISIBILITY CONTROLS
 -------------------------------------------------------------------------------
-local function toggleVisibility()
+local function toggleUI()
 	State.Visible = not State.Visible
-	mainFrame.Visible = State.Visible
+	main.Visible = State.Visible
 end
 
-closeBtn.MouseButton1Click:Connect(toggleVisibility)
-mobileBtn.MouseButton1Click:Connect(toggleVisibility)
+closeBtn.MouseButton1Click:Connect(toggleUI)
+mobileToggle.MouseButton1Click:Connect(toggleUI)
 
 UserInputService.InputBegan:Connect(function(input, processed)
 	if not processed and input.KeyCode == Config.ToggleKey then
-		toggleVisibility()
+		toggleUI()
 	end
 end)
 
