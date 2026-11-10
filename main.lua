@@ -1,6 +1,6 @@
 --[=[
-    Universal Third-Party Script Hub
-    Tương thích: PC & Mobile (Chạy trên mọi trải nghiệm Roblox)
+    Universal Third-Party Script Hub (Tích hợp Player ESP)
+    Tương thích: PC & Mobile (Chạy trực tiếp qua loadstring)
 ]=]
 
 local Players = game:GetService("Players")
@@ -29,7 +29,6 @@ end
 
 local targetContainer = getUIContainer()
 
--- Xóa phiên bản cũ nếu đã chạy trước đó
 if targetContainer:FindFirstChild("UniversalHubGUI") then
 	targetContainer.UniversalHubGUI:Destroy()
 end
@@ -42,7 +41,12 @@ local Config = {
 	DefaultSpeed = 16,
 	BoostSpeed = 45,
 	DefaultJump = 50,
-	BoostJump = 120
+	BoostJump = 120,
+	ESP = {
+		AllyColor = Color3.fromRGB(0, 255, 120),
+		EnemyColor = Color3.fromRGB(255, 50, 50),
+		HideSameTeam = false
+	}
 }
 
 local State = {
@@ -52,9 +56,11 @@ local State = {
 		SpeedWalk = false,
 		HighJump = false,
 		Noclip = false,
-		FullBright = false
+		FullBright = false,
+		ESP = false
 	},
-	Connections = {}
+	Connections = {},
+	ESPObjects = {}
 }
 
 -------------------------------------------------------------------------------
@@ -66,8 +72,8 @@ gui.ResetOnSpawn = false
 gui.Parent = targetContainer
 
 local main = Instance.new("Frame")
-main.Size = UDim2.new(0, 300, 0, 340)
-main.Position = UDim2.new(0.5, -150, 0.5, -170)
+main.Size = UDim2.new(0, 310, 0, 380)
+main.Position = UDim2.new(0.5, -155, 0.5, -190)
 main.BackgroundColor3 = Color3.fromRGB(24, 24, 28)
 main.BorderSizePixel = 0
 main.Parent = gui
@@ -167,7 +173,131 @@ setupDrag(main, topbar)
 setupDrag(mobileToggle, mobileToggle)
 
 -------------------------------------------------------------------------------
--- 5. CORE LOGIC FEATURES
+-- 5. ESP IMPLEMENTATION
+-------------------------------------------------------------------------------
+local function clearPlayerESP(player)
+	if State.ESPObjects[player] then
+		for _, obj in ipairs(State.ESPObjects[player]) do
+			if typeof(obj) == "Instance" and obj.Parent then
+				obj:Destroy()
+			end
+		end
+		State.ESPObjects[player] = nil
+	end
+end
+
+local function clearAllESP()
+	for player, _ in pairs(State.ESPObjects) do
+		clearPlayerESP(player)
+	end
+	State.ESPObjects = {}
+end
+
+local function applyESP(active)
+	if State.Connections.ESP then
+		State.Connections.ESP:Disconnect()
+		State.Connections.ESP = nil
+	end
+
+	if active then
+		State.Connections.ESP = RunService.Heartbeat:Connect(function()
+			local localChar = LocalPlayer.Character
+			local localHrp = localChar and localChar:FindFirstChild("HumanoidRootPart")
+
+			for _, plr in ipairs(Players:GetPlayers()) do
+				if plr == LocalPlayer then continue end
+
+				if Config.ESP.HideSameTeam and plr.Team == LocalPlayer.Team and plr.Team ~= nil then
+					clearPlayerESP(plr)
+					continue
+				end
+
+				local char = plr.Character
+				local hrp = char and char:FindFirstChild("HumanoidRootPart")
+				local hum = char and char:FindFirstChildOfClass("Humanoid")
+
+				if char and hrp and hum and hum.Health > 0 then
+					local color = (plr.Team == LocalPlayer.Team and plr.Team ~= nil) and Config.ESP.AllyColor or Config.ESP.EnemyColor
+
+					if not State.ESPObjects[plr] then
+						local hl = Instance.new("Highlight")
+						hl.Name = "ESPHighlight"
+						hl.FillTransparency = 0.75
+						hl.OutlineTransparency = 0
+						hl.FillColor = color
+						hl.OutlineColor = color
+						hl.Parent = char
+
+						local bg = Instance.new("BillboardGui")
+						bg.Name = "ESPInfoGui"
+						bg.Size = UDim2.new(0, 120, 0, 42)
+						bg.AlwaysOnTop = true
+						bg.StudsOffset = Vector3.new(0, 3.2, 0)
+
+						local nameLabel = Instance.new("TextLabel")
+						nameLabel.Size = UDim2.new(1, 0, 0.45, 0)
+						nameLabel.BackgroundTransparency = 1
+						nameLabel.TextColor3 = color
+						nameLabel.TextStrokeTransparency = 0.5
+						nameLabel.Font = Enum.Font.SourceSansBold
+						nameLabel.TextSize = 13
+						nameLabel.Parent = bg
+
+						local healthBg = Instance.new("Frame")
+						healthBg.Size = UDim2.new(1, 0, 0.25, 0)
+						healthBg.Position = UDim2.new(0, 0, 0.55, 0)
+						healthBg.BackgroundColor3 = Color3.fromRGB(30, 30, 35)
+						healthBg.BorderSizePixel = 0
+						healthBg.Parent = bg
+
+						local healthBgCorner = Instance.new("UICorner")
+						healthBgCorner.CornerRadius = UDim.new(0, 3)
+						healthBgCorner.Parent = healthBg
+
+						local healthBar = Instance.new("Frame")
+						healthBar.Size = UDim2.new(1, 0, 1, 0)
+						healthBar.BackgroundColor3 = Color3.fromRGB(0, 230, 100)
+						healthBar.BorderSizePixel = 0
+						healthBar.Parent = healthBg
+
+						local healthBarCorner = Instance.new("UICorner")
+						healthBarCorner.CornerRadius = UDim.new(0, 3)
+						healthBarCorner.Parent = healthBar
+
+						bg.Parent = hrp
+						State.ESPObjects[plr] = { hl, bg, nameLabel, healthBar }
+					end
+
+					local espData = State.ESPObjects[plr]
+					if espData then
+						local dist = localHrp and math.floor((localHrp.Position - hrp.Position).Magnitude) or 0
+						espData[3].Text = string.format("%s [%dm]", plr.Name, dist)
+
+						local healthPercent = math.clamp(hum.Health / hum.MaxHealth, 0, 1)
+						espData[4].Size = UDim2.new(healthPercent, 0, 1, 0)
+
+						if healthPercent > 0.5 then
+							espData[4].BackgroundColor3 = Color3.fromRGB(0, 230, 100)
+						elseif healthPercent > 0.2 then
+							espData[4].BackgroundColor3 = Color3.fromRGB(240, 180, 0)
+						else
+							espData[4].BackgroundColor3 = Color3.fromRGB(255, 50, 50)
+						end
+					end
+				else
+					clearPlayerESP(plr)
+				end
+			end
+		end)
+	else
+		clearAllESP()
+	end
+end
+
+Players.PlayerRemoving:Connect(clearPlayerESP)
+
+-------------------------------------------------------------------------------
+-- 6. CORE LOGIC FEATURES
 -------------------------------------------------------------------------------
 local function applyPhysics()
 	local char = LocalPlayer.Character
@@ -217,7 +347,7 @@ local function applyFullBright(active)
 end
 
 -------------------------------------------------------------------------------
--- 6. UI TOGGLES CREATION
+-- 7. UI TOGGLES CREATION
 -------------------------------------------------------------------------------
 local function addToggle(nameText, key, callback)
 	local btn = Instance.new("TextButton")
@@ -246,13 +376,14 @@ addToggle("Tăng tốc (Speed Walk)", "SpeedWalk", function() applyPhysics() end
 addToggle("Nhảy cao (High Jump)", "HighJump", function() applyPhysics() end)
 addToggle("Đi xuyên tường (Noclip)", "Noclip", function(v) applyNoclip(v) end)
 addToggle("Tăng độ sáng (Full Bright)", "FullBright", function(v) applyFullBright(v) end)
+addToggle("Hiển thị Player ESP", "ESP", function(v) applyESP(v) end)
 
 layout:GetPropertyChangedSignal("AbsoluteContentSize"):Connect(function()
 	scroll.CanvasSize = UDim2.new(0, 0, 0, layout.AbsoluteContentSize.Y + 10)
 end)
 
 -------------------------------------------------------------------------------
--- 7. VISIBILITY CONTROLS
+-- 8. VISIBILITY CONTROLS & RESPAWN HANDLER
 -------------------------------------------------------------------------------
 local function toggleUI()
 	State.Visible = not State.Visible
